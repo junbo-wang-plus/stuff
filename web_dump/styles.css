@@ -1,0 +1,16 @@
+.text-clipper-button {
+  position: absolute;
+  z-index: 10000;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  background: #4a90e2;
+  color: white;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.text-clipper-button:hover {
+  background: #357abd;
+}
