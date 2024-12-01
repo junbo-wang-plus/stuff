@@ -1,37 +1,67 @@
-document.getElementById('export').addEventListener('click', async () => {
-    console.log('Export button clicked');
+// Load saved clippings when popup opens
+document.addEventListener('DOMContentLoaded', async () => {
+    const editor = document.getElementById('editor');
     try {
-        const response = await chrome.storage.local.get(['clippings']);
-        console.log('Current clippings:', response.clippings);
-        
-        if (!response.clippings) {
-            alert('No clippings to export yet!');
-            return;
-        }
-
-        // Create and trigger download
-        const blob = new Blob([response.clippings], {type: 'text/plain'});
-        const url = URL.createObjectURL(blob);
-        
-        chrome.downloads.download({
-            url: url,
-            filename: 'web_clippings.txt',
-            saveAs: true
-        }, (downloadId) => {
-            if (chrome.runtime.lastError) {
-                console.error('Download failed:', chrome.runtime.lastError);
-                alert('Export failed: ' + chrome.runtime.lastError.message);
-            } else {
-                console.log('Download started with ID:', downloadId);
-                URL.revokeObjectURL(url);
-                window.close();
-            }
-        });
+        const result = await chrome.storage.local.get(['clippings']);
+        editor.value = result.clippings || '';
     } catch (error) {
-        console.error('Export error:', error);
-        alert('Export failed: ' + error.message);
+        console.error('Failed to load clippings:', error);
+        editor.value = 'Error loading clippings.';
     }
 });
 
-// Log when popup loads
-console.log('Popup script loaded');
+// Save changes to storage
+document.getElementById('save').addEventListener('click', async () => {
+    const editor = document.getElementById('editor');
+    try {
+        await chrome.storage.local.set({ clippings: editor.value });
+        // Visual feedback
+        const button = document.getElementById('save');
+        button.textContent = 'Saved!';
+        setTimeout(() => {
+            button.textContent = 'Save Changes';
+        }, 1000);
+    } catch (error) {
+        console.error('Failed to save:', error);
+        alert('Failed to save changes.');
+    }
+});
+
+// Export to file
+document.getElementById('export').addEventListener('click', async () => {
+    const editor = document.getElementById('editor');
+    try {
+        const blob = new Blob([editor.value], {type: 'text/plain'});
+        const url = URL.createObjectURL(blob);
+        
+        await chrome.downloads.download({
+            url: url,
+            filename: 'web_clippings.txt',
+            saveAs: true
+        });
+        
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('Export failed:', error);
+        alert('Failed to export file.');
+    }
+});
+
+// Clear all clippings
+document.getElementById('clear').addEventListener('click', async () => {
+    if (confirm('Are you sure you want to clear all clippings? This cannot be undone.')) {
+        try {
+            await chrome.storage.local.remove(['clippings']);
+            document.getElementById('editor').value = '';
+        } catch (error) {
+            console.error('Failed to clear:', error);
+            alert('Failed to clear clippings.');
+        }
+    }
+});
+
+// Auto-save when popup closes
+window.addEventListener('unload', () => {
+    const editor = document.getElementById('editor');
+    chrome.storage.local.set({ clippings: editor.value });
+});
