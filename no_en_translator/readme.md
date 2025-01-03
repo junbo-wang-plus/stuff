@@ -1,2 +1,4 @@
 ## Usage
-'python translator.py input.txt cpu'
+```
+python translator.py input.txt cpu
+```
