@@ -1,2 +1,3 @@
-# Ignore file types
-*.jld2
+# Add to .gitignore
+Dalzell2D/wave_batch_results.jld2
+*.jld2  # To ignore all similar files
