@@ -1,0 +1,46 @@
+# Wave Simulation Configuration
+
+[parameters]
+# Wave physical properties
+k_p = 2.91            # Peak wave number
+k_w = 0.12            # Wave number bandwidth (relative to k_p or absolute)
+k_w_relative = false  # If true, k_w = k_w * k_p
+Hs = 0.04             # Significant wave height
+kph = 1.8            # kph parameter
+t0 = 0                # Initial time
+
+# Spectrum configuration
+spectrum_type = "jonswap"  # Options: "gaussian", "jonswap", "custom"
+
+# JONSWAP specific parameters (used only when spectrum_type = "jonswap")
+gamma = 3.3                # Peak enhancement factor
+sigma_a = 0.07             # Left spectral width
+sigma_b = 0.09             # Right spectral width
+
+# Custom spectrum (used only when spectrum_type = "custom")
+spectrum_file = "custom_spectrum.csv"  # Path to custom spectrum file
+
+# Simulation parameters
+Ntp = 128            # Number of points in a period
+Nperiod = 2400       # Time scale for periods
+Nxperiod = 60        # Number of periods in space
+ppp = 32             # Points per wavelength
+Nk = 128             # Number of wave components
+water_type = "finitewater"  # "deepwater" or "finitewater"
+
+[simulation]
+# Simulation control
+N_test = 50           # Number of simulations to run
+seed_max = 500        # Maximum seed number to sample from
+use_parallel = true   # Whether to use parallel processing
+num_workers = 0       # Number of worker processes (0 = auto-detect)
+
+[output]
+# Output configuration
+filename = "wave_batch_results2.jld2"  # Output filename
+directory = "results2"                 # Output directory for plots
+
+[plot]
+# Plot configuration
+size = [800, 600]    # Default plot size [width, height]
+dpi = 300            # Plot resolution
