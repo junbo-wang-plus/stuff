@@ -87,6 +87,12 @@ function load_config(config_file)
         spectrum_params["spectrum_file"] = get(config["parameters"], "spectrum_file", "custom_spectrum.csv")
     end
     
+    # Get wave number range parameters
+    spectrum_params["kmin_factor"] = get(config["parameters"], "kmin_factor", 4.0)
+    spectrum_params["kmax_factor"] = get(config["parameters"], "kmax_factor", 4.0)
+    spectrum_params["custom_kmin"] = get(config["parameters"], "custom_kmin", -1.0)
+    spectrum_params["custom_kmax"] = get(config["parameters"], "custom_kmax", -1.0)
+    
     # Store spectrum parameters
     input[:spectrum_params] = spectrum_params
     
@@ -119,7 +125,6 @@ function load_config(config_file)
     
     return input, config["simulation"], config["output"]
 end
-
 # === Run Simulation Function ===
 function run_simulation(config_file)
     # Load configuration
