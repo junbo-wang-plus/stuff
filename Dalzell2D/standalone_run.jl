@@ -148,7 +148,7 @@ function run_simulation(config_file)
         t_sim_start = time()
         
         # Run the simulation
-        zeta_22, zeta_20, zeta_1, spectrum_type = batch_run_seeded(seed_values[i], input, endtimeT_p)
+        zeta_22, zeta_20, zeta_1, spectrum_type, k_range = batch_run_seeded(seed_values[i], input, endtimeT_p)
         zeta_total = zeta_22 + zeta_20 + zeta_1
         
         # Calculate statistics
@@ -172,7 +172,8 @@ function run_simulation(config_file)
             "exceed_prob" => exceed_prob,
             "thresholds" => thresholds,
             "seed" => seed_values[i],
-            "spectrum_type" => spectrum_type
+            "spectrum_type" => spectrum_type,
+            "k_range" => k_range
         )
     end
     
@@ -197,7 +198,7 @@ function run_simulation(config_file)
     batch = Dict{Symbol, Any}()
     
     for field in ["zeta_22", "zeta_20", "zeta_1", "zeta_total", "Hs", "Hs_m0", "kurtosis", 
-                 "skewness", "exceed_prob", "thresholds", "seed", "spectrum_type"]
+                 "skewness", "exceed_prob", "thresholds", "seed", "spectrum_type", "k_range"]
         batch[Symbol(field)] = [r[field] for r in results]
     end
     
@@ -216,6 +217,14 @@ function run_simulation(config_file)
         :spectrum_type => input[:spectrum_params]["spectrum_type"]
     )
     
+    # Add wave number range parameters
+    batch[:parameters][:kmin_factor] = get(input[:spectrum_params], "kmin_factor", 4.0)
+    batch[:parameters][:kmax_factor] = get(input[:spectrum_params], "kmax_factor", 4.0) 
+    batch[:parameters][:custom_kmin] = get(input[:spectrum_params], "custom_kmin", -1.0)
+    batch[:parameters][:custom_kmax] = get(input[:spectrum_params], "custom_kmax", -1.0)
+    batch[:parameters][:actual_kmin] = batch[:k_range][1][1]
+    batch[:parameters][:actual_kmax] = batch[:k_range][1][2]
+    
     # Add additional spectrum parameters
     if input[:spectrum_params]["spectrum_type"] == "jonswap"
         batch[:parameters][:gamma] = input[:spectrum_params]["gamma"]
@@ -233,7 +242,6 @@ function run_simulation(config_file)
     # Return for potential further processing
     return batch, input
 end
-
 # Main function
 function main()
     if args["plot-only"]
