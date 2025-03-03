@@ -5,13 +5,30 @@ function obtain_2dwaveSpectra_irregular(Hs, eps0, k_p, k_w, option, Nk, seed, sp
     Random.seed!(seed)
     g = 9.81
     
-    # Define wave number range
-    kmin = k_p - 4*k_w
-    if kmin < 0
-        kmin = 0.1*k_p
+    # Define wave number range based on parameters or custom values
+    kmin_factor = get(spectrum_params, "kmin_factor", 4.0)
+    kmax_factor = get(spectrum_params, "kmax_factor", 4.0)
+    custom_kmin = get(spectrum_params, "custom_kmin", -1.0)
+    custom_kmax = get(spectrum_params, "custom_kmax", -1.0)
+    
+    # Apply custom kmin if specified
+    if custom_kmin > 0
+        kmin = custom_kmin
+    else
+        kmin = k_p - kmin_factor * k_w
+        if kmin < 0
+            kmin = 0.1 * k_p
+        end
     end
     
-    kvec_range = range(kmin, k_p + 4 * k_w, length=Nk)
+    # Apply custom kmax if specified
+    if custom_kmax > 0
+        kmax = custom_kmax
+    else
+        kmax = k_p + kmax_factor * k_w
+    end
+    
+    kvec_range = range(kmin, kmax, length=Nk)
     kvec_rs = collect(kvec_range)  # Convert range to array
     
     # Generate spectrum based on type
@@ -50,7 +67,8 @@ function obtain_2dwaveSpectra_irregular(Hs, eps0, k_p, k_w, option, Nk, seed, sp
     
     rand_phase = 2*pi*rand(Nk)
     
-    return kvec_rs, omega_rs, amp_product, rand_phase, spectrum_type
+    # Save wave number range in the return values
+    return kvec_rs, omega_rs, amp_product, rand_phase, spectrum_type, (kmin, kmax)
 end
 
 # Gaussian spectrum
@@ -133,7 +151,6 @@ function load_custom_spectrum(filename, kvec_rs, Hs)
     scaling_factor = (Hs^2/16) / sum(Sk_vec * (kvec_rs[2] - kvec_rs[1]))
     return Sk_vec .* scaling_factor
 end
-
 function Dalzell_2D_xyt_YanLi_probe(t, x, t0, option, kvec_rs, omega_rs, phase_rs, amp_rs)
     # Li & Li (pof, 2021) or Li (JFM, 2021) 
     g = 9.81
