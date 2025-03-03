@@ -281,7 +281,7 @@ end
 # Main processing function that will run on each worker
 function batch_run_seeded(seed, input, endtimeT_p)
     # Random params
-    kvec_rs, omega_rs, amp_rs, phase_rs, spectrum_type = obtain_2dwaveSpectra_irregular(
+    kvec_rs, omega_rs, amp_rs, phase_rs, spectrum_type, k_range = obtain_2dwaveSpectra_irregular(
         input[:Hs], input[:eps_0], input[:k_p], input[:k_w], input[:option], 
         input[:Nk], seed, input[:spectrum_params]
     )
@@ -300,5 +300,5 @@ function batch_run_seeded(seed, input, endtimeT_p)
             )
     end
     
-    return zeta_22_single_probe, zeta_20_single_probe, zeta_1_single_probe, spectrum_type
+    return zeta_22_single_probe, zeta_20_single_probe, zeta_1_single_probe, spectrum_type, k_range
 end
