@@ -100,25 +100,34 @@ function load_custom_spectrum(filename, kvec_rs, Hs)
 end
 
 # Helper function to generate spectrum information string
+# Helper function to generate spectrum information string
 function generate_spectrum_info(params)
     spectrum_type = get(params, :spectrum_type, "gaussian")
     
     base_info = "ϵ=$(params[:eps_0]), f_p=$(round(1/params[:T_p], digits=3)), " *
                 "h=$(round(params[:h], digits=2)), k_p=$(params[:k_p])"
                 
+    # Add k-range information
+    k_range_info = ""
+    if haskey(params, :actual_kmin) && haskey(params, :actual_kmax)
+        k_range_info = "\nk-range: [$(round(params[:actual_kmin], digits=3)), $(round(params[:actual_kmax], digits=3))]"
+    end
+    
     if spectrum_type == "gaussian"
         k_w_rel = params[:k_w] / params[:k_p]
-        return "$base_info\nSpectrum: Gaussian, k_w/k_p=$(round(k_w_rel, digits=3))"
+        return "$base_info\nSpectrum: Gaussian, k_w/k_p=$(round(k_w_rel, digits=3))$k_range_info"
     elseif spectrum_type == "jonswap"
         k_w_rel = params[:k_w] / params[:k_p]
         gamma = get(params, :gamma, 3.3)
-        return "$base_info\nSpectrum: JONSWAP, γ=$gamma, " *
-               "k_w/k_p=$(round(k_w_rel, digits=3))"
+        sigma_a = get(params, :sigma_a, 0.07)
+        sigma_b = get(params, :sigma_b, 0.09)
+        return "$base_info\nSpectrum: JONSWAP, γ=$gamma, σa=$sigma_a, σb=$sigma_b, " *
+               "k_w/k_p=$(round(k_w_rel, digits=3))$k_range_info"
     elseif spectrum_type == "custom"
         spectrum_file = get(params, :spectrum_file, "custom_spectrum.csv")
-        return "$base_info\nSpectrum: Custom ($spectrum_file)"
+        return "$base_info\nSpectrum: Custom ($spectrum_file)$k_range_info"
     else
-        return "$base_info\nSpectrum: Unknown"
+        return "$base_info\nSpectrum: Unknown$k_range_info"
     end
 end
 
@@ -129,13 +138,34 @@ function plot_spectrum(params, output_dir, plot_size)
     k_w = params[:k_w]
     Hs = params[:Hs]
     
-    # Create wave number range for plotting
-    kmin = k_p - 4*k_w
-    if kmin < 0
-        kmin = 0.1*k_p
+    # Use actual k-range if available, otherwise calculate
+    if haskey(params, :actual_kmin) && haskey(params, :actual_kmax)
+        kmin = params[:actual_kmin]
+        kmax = params[:actual_kmax]
+    else
+        kmin_factor = get(params, :kmin_factor, 4.0)
+        kmax_factor = get(params, :kmax_factor, 4.0)
+        custom_kmin = get(params, :custom_kmin, -1.0)
+        custom_kmax = get(params, :custom_kmax, -1.0)
+        
+        if custom_kmin > 0
+            kmin = custom_kmin
+        else
+            kmin = k_p - kmin_factor * k_w
+            if kmin < 0
+                kmin = 0.1 * k_p
+            end
+        end
+        
+        if custom_kmax > 0
+            kmax = custom_kmax
+        else
+            kmax = k_p + kmax_factor * k_w
+        end
     end
     
-    k_values = range(kmin, k_p + 4*k_w, length=500)
+    # Create wave number range for plotting with more resolution
+    k_values = range(kmin, kmax, length=500)
     k_values_arr = collect(k_values)
     
     # Generate spectrum based on type
@@ -180,10 +210,41 @@ function plot_spectrum(params, output_dir, plot_size)
     # Add vertical line at peak wave number
     vline!(p, [k_p], linestyle=:dash, color=:red, label="Peak wave number")
     
+    # Mark the actual range used in simulation
+    if haskey(params, :actual_kmin) && haskey(params, :actual_kmax)
+        vline!(p, [params[:actual_kmin]], linestyle=:dot, color=:blue, label="kmin")
+        vline!(p, [params[:actual_kmax]], linestyle=:dot, color=:blue, label="kmax")
+    end
+    
     display(p)
     savefig(p, joinpath(output_dir, "wave_spectrum.png"))
+    
+    # Also generate a log-scale version to better see the tails
+    p_log = plot(
+        k_values_arr, 
+        S_values,
+        xlabel="Wave Number (k)", 
+        ylabel="Spectral Density S(k)",
+        title="$title_text (Log Scale)\n$spectrum_info",
+        size=plot_size,
+        dpi=300,
+        legend=false,
+        yscale=:log10,
+        ylim=(maximum(S_values)*1e-6, maximum(S_values)*2)
+    )
+    
+    # Add vertical line at peak wave number
+    vline!(p_log, [k_p], linestyle=:dash, color=:red, label="Peak wave number")
+    
+    # Mark the actual range used in simulation
+    if haskey(params, :actual_kmin) && haskey(params, :actual_kmax)
+        vline!(p_log, [params[:actual_kmin]], linestyle=:dot, color=:blue, label="kmin")
+        vline!(p_log, [params[:actual_kmax]], linestyle=:dot, color=:blue, label="kmax")
+    end
+    
+    display(p_log)
+    savefig(p_log, joinpath(output_dir, "wave_spectrum_logscale.png"))
 end
-
 # Main plotting function
 function generate_plots(batch, config_file=nothing)
     # Load config if provided
