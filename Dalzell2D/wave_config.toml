@@ -12,11 +12,11 @@ t0 = 0                # Initial time
 # Wave number range configuration
 kmin_factor = 4.0      # kmin = k_p - kmin_factor*k_w (unless < 0, then 0.1*k_p)
 kmax_factor = 4.0      # kmax = k_p + kmax_factor*k_w
-custom_kmin = -1.0     # If > 0, use this exact value for kmin instead of factor
-custom_kmax = -1.0     # If > 0, use this exact value for kmax instead of factor
+custom_kmin = 1.0     # If > 0, use this exact value for kmin instead of factor
+custom_kmax = 10.0     # If > 0, use this exact value for kmax instead of factor
 
 # Spectrum configuration
-spectrum_type = "gaussian"  # Options: "gaussian", "jonswap", "custom"
+spectrum_type = "jonswap"  # Options: "gaussian", "jonswap", "custom"
 
 # JONSWAP specific parameters (used only when spectrum_type = "jonswap")
 gamma = 3.3                # Peak enhancement factor
