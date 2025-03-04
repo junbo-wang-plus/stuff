@@ -1,3 +1,4 @@
 # Add to .gitignore
-Dalzell2D/wave_batch_results.jld2
+Dalzell2D/wave_batch_results_deep.jld2
+Dalzell2D/wave_batch_results_shallow.jld2
 *.jld2  # To ignore all similar files
