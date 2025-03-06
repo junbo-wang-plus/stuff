@@ -10,7 +10,7 @@ t0 = 0                # Initial time
 normalize_spectrum = false  # When false, use spectrum values directly without scaling to match Hs
 
 # Directional spreading parameters
-tht_w = 0.2           # Directional spreading parameter (radians)
+tht_w = 0.5           # Directional spreading parameter (radians)
 Ntht = 32             # Number of directions
 
 # Probe location (exact point where time series is generated)
@@ -61,7 +61,7 @@ water_type = "finitewater"  # "deepwater" or "finitewater"
 
 [simulation]
 # Simulation control
-N_test = 50            # Number of simulations to run
+N_test = 1            # Number of simulations to run
 seed_max = 500         # Maximum seed number to sample from
 use_parallel = true    # Whether to use parallel processing
 num_workers = 0        # Number of worker processes (0 = auto-detect based on CPU count)

@@ -5,8 +5,208 @@ using FFTW
 using DelimitedFiles
 using LinearAlgebra
 
-# Include 2D spectrum handling functions
-include("spectrum_2d_loader.jl")
+# Functions for loading and processing 2D wave spectra are now integrated directly
+
+function load_2d_spectrum_netcdf(filename)
+    using NetCDF
+    
+    # Open the NetCDF file
+    nc = NetCDF.open(filename)
+    
+    # Read the specific variables from your WAM file
+    # You'll need to inspect your WAM file to find the correct variable names
+    # Common ones might be:
+    freq = NetCDF.read(nc, "frequency")  # or similar name
+    dir = NetCDF.read(nc, "direction")   # or similar name
+    spectrum = NetCDF.read(nc, "e_fth")  # or similar name for energy spectrum
+    
+    # Convert frequency to wavenumber if needed
+    g = 9.81
+    depth = 50.0  # your water depth in meters
+    k_values = zeros(length(freq))
+    
+    for i in 1:length(freq)
+        omega = 2π * freq[i]
+        # Dispersion relation to convert frequency to wavenumber
+        k_est = omega^2 / g  # deep water approximation
+        for _ in 1:5  # iterative solution
+            k_est = omega^2 / (g * tanh(k_est * depth))
+        end
+        k_values[i] = k_est
+    end
+    
+    # Close the NetCDF file
+    NetCDF.close(nc)
+    
+    return k_values, dir, spectrum
+end
+
+
+function load_2d_spectrum_csv(filename)
+    # Read the entire file content
+    data = nothing
+    try
+        data = readdlm(filename, ',', Float64, '\n', skipstart=0)
+    catch e
+        error("Error reading 2D spectrum file: $e")
+    end
+
+    # Detect format based on data structure
+    if size(data, 2) == 3
+        # Three-column format: k, θ, S(k,θ)
+        k_values = sort(unique(data[:, 1]))
+        theta_values = sort(unique(data[:, 2]))
+        
+        # Initialize the spectrum grid
+        spectrum_grid = zeros(length(theta_values), length(k_values))
+        
+        # Fill the grid
+        for i in 1:size(data, 1)
+            k = data[i, 1]
+            theta = data[i, 2]
+            S = data[i, 3]
+            
+            k_idx = findfirst(x -> x ≈ k, k_values)
+            theta_idx = findfirst(x -> x ≈ theta, theta_values)
+            
+            if !isnothing(k_idx) && !isnothing(theta_idx)
+                spectrum_grid[theta_idx, k_idx] = S
+            end
+        end
+        
+        return k_values, theta_values, spectrum_grid, "three_column"
+    else
+        # Grid format with header
+        # First row (excluding first cell) contains k values
+        k_values = vec(data[1, 2:end])
+        
+        # First column (excluding first cell) contains θ values
+        theta_values = vec(data[2:end, 1])
+        
+        # Rest of the grid contains S(k,θ) values
+        spectrum_grid = data[2:end, 2:end]
+        
+        return k_values, theta_values, spectrum_grid, "grid_with_header"
+    end
+end
+
+"""
+    load_2d_spectrum_netcdf(filename)
+
+Load a 2D wave spectrum from a NetCDF file (typically from WAM or WAVEWATCH III).
+
+# Arguments
+- `filename`: Path to the NetCDF file
+
+# Returns
+- `k_values`: Array of wave numbers
+- `theta_values`: Array of wave directions
+- `spectrum_grid`: 2D array of spectral energy densities
+"""
+function load_2d_spectrum_netcdf(filename)
+    # This requires the NetCDF.jl package
+    error("""
+    NetCDF support requires the NetCDF.jl package. 
+    
+    To implement this functionality:
+    1. Add 'using NetCDF' to your imports
+    2. Install the package with: ]add NetCDF
+    3. Implement the specific NetCDF reading logic for your WAM/WAVEWATCH format
+    
+    The exact implementation depends on the specific structure of your NetCDF files.
+    """)
+    
+    # Example implementation (would need to be adapted to specific file format):
+    #=
+    using NetCDF
+    
+    # Open the NetCDF file
+    nc = NetCDF.open(filename)
+    
+    # Read the dimensions and variables based on your NetCDF structure
+    # This is highly dependent on the specific output format from WAM/WAVEWATCH
+    k_values = NetCDF.read(nc, "wavenumber")  # or "frequency" depending on the file
+    theta_values = NetCDF.read(nc, "direction")
+    spectrum_grid = NetCDF.read(nc, "efth")  # The 2D spectrum variable name
+    
+    # Close the file
+    NetCDF.close(nc)
+    
+    return k_values, theta_values, spectrum_grid
+    =#
+    
+    # For now, return empty arrays as this is just a placeholder
+    return Float64[], Float64[], Array{Float64}(undef, 0, 0)
+end
+
+"""
+    process_2d_spectrum(k_values, theta_values, spectrum_grid, Hs, params)
+
+Process a 2D spectrum and create the necessary wave components.
+
+# Arguments
+- `k_values`: Array of wave numbers
+- `theta_values`: Array of wave directions
+- `spectrum_grid`: 2D array of spectral energy densities
+- `Hs`: Target significant wave height (used only if normalize=true)
+- `params`: Additional parameters for spectrum processing
+
+# Returns
+- `kx_values`: X-component of wave numbers
+- `ky_values`: Y-component of wave numbers
+- `k_magnitudes`: Magnitude of wave numbers
+- `theta_flat`: Flattened array of directions
+- `amplitudes`: Wave amplitudes
+"""
+function process_2d_spectrum(k_values, theta_values, spectrum_grid, Hs, params)
+    # Flatten the grid to create vectors of k, θ, and S(k,θ)
+    n_k = length(k_values)
+    n_theta = length(theta_values)
+    
+    # Create meshgrid-like arrays
+    k_grid = repeat(reshape(k_values, 1, n_k), n_theta, 1)
+    theta_grid = repeat(reshape(theta_values, n_theta, 1), 1, n_k)
+    
+    # Flatten the arrays
+    k_flat = vec(k_grid)
+    theta_flat = vec(theta_grid)
+    S_flat = vec(spectrum_grid)
+    
+    # Check if normalization is requested
+    normalize = get(params, "normalize_spectrum", false)
+    
+    # Process the spectrum values
+    if normalize
+        # Calculate the sum for normalization
+        S_sum = sum(S_flat)
+        
+        if S_sum ≈ 0.0
+            error("The spectrum has zero or near-zero total energy")
+        end
+        
+        # Calculate the amplitudes
+        # The target variance is Hs²/16
+        target_variance = Hs^2 / 16
+        scaling_factor = sqrt(target_variance / S_sum)
+        
+        # Convert to amplitudes with normalization
+        amplitudes = S_flat .* scaling_factor
+    else
+        # Use the spectrum values directly - simply take the square root to convert
+        # from energy density to amplitude (E = a²/2 => a = sqrt(2E))
+        amplitudes = sqrt.(2.0 .* S_flat)
+        
+        # Log the resulting significant wave height
+        approx_Hs = 4 * sqrt(sum(S_flat))
+        @info "Using 2D spectrum without normalization. Approximate Hs = $approx_Hs"
+    end
+    
+    # Calculate kx and ky components
+    kx_values = k_flat .* cos.(theta_flat)
+    ky_values = k_flat .* sin.(theta_flat)
+    
+    return kx_values, ky_values, k_flat, theta_flat, amplitudes
+end
 
 """
     obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, option, Nk, Ntht, seed, spectrum_params)
@@ -359,6 +559,13 @@ function load_custom_spectrum(filename, kvec_rs, Hs; normalize=true)
         @info "Using custom spectrum without normalization. Approximate Hs = $approx_Hs"
         return Sk_vec
     end
+end
+
+# Helper function for Gaussian spectrum
+function generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
+    Sk_vec = exp.(-((kvec_rs .- k_p).^2) ./ (2 * k_w^2))
+    scaling_factor = (Hs^2/16) / sum(Sk_vec * (kvec_rs[2] - kvec_rs[1]))
+    return Sk_vec .* scaling_factor
 end
 
 """
