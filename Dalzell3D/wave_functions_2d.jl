@@ -1,103 +1,12 @@
-# Core wave analysis functions with support for both 1D and 2D simulations
+# Core wave analysis functions with support for 2D simulations
 using Statistics
 using Random
 using FFTW
 using DelimitedFiles
 using LinearAlgebra
 
-"""
-    obtain_2dwaveSpectra_irregular(Hs, eps0, k_p, k_w, option, Nk, seed, spectrum_params)
-
-Generate random wave spectra for 1D (unidirectional) waves.
-
-# Arguments
-- `Hs`: Significant wave height
-- `eps0`: Wave steepness parameter
-- `k_p`: Peak wave number
-- `k_w`: Wave number bandwidth
-- `option`: Dictionary with water depth options
-- `Nk`: Number of wave components
-- `seed`: Random seed for reproducibility
-- `spectrum_params`: Dictionary with spectrum parameters
-
-# Returns
-- `kvec_rs`: Wave numbers
-- `omega_rs`: Angular frequencies
-- `amp_rs`: Wave amplitudes
-- `phase_rs`: Wave phases
-- `spectrum_type`: Type of spectrum used
-- `k_range`: Range of wave numbers (kmin, kmax)
-"""
-function obtain_2dwaveSpectra_irregular(Hs, eps0, k_p, k_w, option, Nk, seed, spectrum_params)
-    # Set random seed for reproducibility
-    Random.seed!(seed)
-    g = 9.81
-    
-    # Define wave number range based on parameters or custom values
-    kmin_factor = get(spectrum_params, "kmin_factor", 4.0)
-    kmax_factor = get(spectrum_params, "kmax_factor", 4.0)
-    custom_kmin = get(spectrum_params, "custom_kmin", -1.0)
-    custom_kmax = get(spectrum_params, "custom_kmax", -1.0)
-    
-    # Apply custom kmin if specified
-    if custom_kmin > 0
-        kmin = custom_kmin
-    else
-        kmin = k_p - kmin_factor * k_w
-        if kmin < 0
-            kmin = 0.1 * k_p
-        end
-    end
-    
-    # Apply custom kmax if specified
-    if custom_kmax > 0
-        kmax = custom_kmax
-    else
-        kmax = k_p + kmax_factor * k_w
-    end
-    
-    kvec_range = range(kmin, kmax, length=Nk)
-    kvec_rs = collect(kvec_range)  # Convert range to array
-    
-    # Generate spectrum based on type
-    spectrum_type = get(spectrum_params, "spectrum_type", "gaussian")
-    
-    if spectrum_type == "gaussian"
-        Sk_vec = generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
-    elseif spectrum_type == "jonswap"
-        gamma = get(spectrum_params, "gamma", 3.3)
-        sigma_a = get(spectrum_params, "sigma_a", 0.07)
-        sigma_b = get(spectrum_params, "sigma_b", 0.09)
-        Sk_vec = generate_jonswap_spectrum(option, kvec_rs, Hs, k_p, k_w, gamma, sigma_a, sigma_b)
-    elseif spectrum_type == "custom"
-        spectrum_file = get(spectrum_params, "spectrum_file", "")
-        if isempty(spectrum_file) || !isfile(spectrum_file)
-            @warn "Custom spectrum file not found, falling back to Gaussian spectrum"
-            Sk_vec = generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
-        else
-            Sk_vec = load_custom_spectrum(spectrum_file, kvec_rs, Hs)
-        end
-    else
-        @warn "Unknown spectrum type: $spectrum_type, falling back to Gaussian"
-        Sk_vec = generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
-    end
-    
-    # Calculate frequencies based on water depth
-    if option[:option] == "deepwater"
-        omega_rs = sqrt.(g .* kvec_rs)
-    elseif option[:option] == "finitewater"
-        omega_rs = sqrt.(g .* kvec_rs .* tanh.(kvec_rs .* option[:h]))
-    end
-    
-    # Implementing the Rayleigh random distribution
-    dk = kvec_range[2] - kvec_range[1]
-    amp_product = sqrt.(-2 .* log.(rand(Nk))) .* sqrt.(Sk_vec .* dk)
-    
-    rand_phase = 2*pi*rand(Nk)
-    
-    # Save wave number range in the return values
-    return kvec_rs, omega_rs, amp_product, rand_phase, spectrum_type, (kmin, kmax)
-end
+# Include 2D spectrum handling functions
+include("spectrum_2d_loader.jl")
 
 """
     obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, option, Nk, Ntht, seed, spectrum_params)
@@ -131,6 +40,11 @@ function obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, opt
     # Set random seed for reproducibility
     Random.seed!(seed)
     g = 9.81
+    
+    # Check if we're using a full 2D spectrum file
+    if get(spectrum_params, "spectrum_type", "") == "spectrum2d"
+        return obtain_2d_spectrum_from_file(Hs, option, seed, spectrum_params)
+    end
     
     # Define wave number range based on parameters or custom values
     kmin_factor = get(spectrum_params, "kmin_factor", 4.0)
@@ -177,6 +91,9 @@ function obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, opt
     # Generate spectrum based on type
     spectrum_type = get(spectrum_params, "spectrum_type", "gaussian")
     
+    # Check if normalization is requested
+    normalize_spectrum = get(spectrum_params, "normalize_spectrum", true)
+    
     # Wave number spectrum
     if spectrum_type == "gaussian"
         # Use different spreading for high-frequency components
@@ -198,7 +115,8 @@ function obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, opt
             @warn "Custom spectrum file not found, falling back to Gaussian spectrum"
             Sk_vec = exp.(-((kvec_rs .- k_p).^2) ./ (2 * k_w^2))
         else
-            Sk_vec = load_custom_spectrum(spectrum_file, kvec_rs, Hs)
+            # For custom spectra, respect the normalize_spectrum setting
+            Sk_vec = load_custom_spectrum(spectrum_file, kvec_rs, Hs, normalize=normalize_spectrum)
         end
     else
         @warn "Unknown spectrum type: $spectrum_type, falling back to Gaussian"
@@ -230,21 +148,90 @@ function obtain_directional_waveSpectra_irregular(Hs, eps0, k_p, k_w, tht_w, opt
 end
 
 """
-    generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
+    obtain_2d_spectrum_from_file(Hs, option, seed, spectrum_params)
 
-Generate a Gaussian spectrum.
+Generate wave components from a 2D spectrum file (e.g., from WAM or WAVEWATCH III).
 
 # Arguments
-- `kvec_rs`: Wave numbers
-- `Hs`: Significant wave height
-- `k_p`: Peak wave number
-- `k_w`: Wave number bandwidth
+- `Hs`: Significant wave height (used for normalization if requested)
+- `option`: Dictionary with water depth options
+- `seed`: Random seed for reproducibility
+- `spectrum_params`: Dictionary with spectrum parameters including the file path
 
 # Returns
-- Spectral density values
+- `kx_rs`: X-component of wave number
+- `ky_rs`: Y-component of wave number
+- `kvec_rs`: Magnitude of wave number
+- `tht_rs`: Wave direction angles
+- `omega_rs`: Angular frequencies
+- `amp_rs`: Wave amplitudes
+- `phase_rs`: Wave phases
+- `spectrum_type`: "spectrum2d"
+- `k_range`: Range of wave numbers (kmin, kmax)
 """
-function generate_gaussian_spectrum(kvec_rs, Hs, k_p, k_w)
-    return Hs^2/16/k_w/sqrt(2*pi) .* exp.(-(kvec_rs .- k_p).^2 ./ 2 / (k_w)^2)
+function obtain_2d_spectrum_from_file(Hs, option, seed, spectrum_params)
+    # Set random seed for reproducibility
+    Random.seed!(seed)
+    g = 9.81
+    
+    # Get the spectrum file path
+    spectrum_file = get(spectrum_params, "spectrum2d_file", "")
+    if isempty(spectrum_file) || !isfile(spectrum_file)
+        error("2D spectrum file not found: $spectrum_file")
+    end
+    
+    # Determine file format and load accordingly
+    file_format = get(spectrum_params, "spectrum2d_format", "auto")
+    
+    # Load the spectrum based on format
+    k_values = Float64[]
+    theta_values = Float64[]
+    spectrum_grid = Array{Float64}(undef, 0, 0)
+    
+    if file_format == "auto"
+        # Try to guess format based on extension
+        if endswith(spectrum_file, ".nc")
+            file_format = "netcdf"
+        else
+            file_format = "csv"
+        end
+    end
+    
+    if file_format == "netcdf"
+        # Load from NetCDF (requires NetCDF.jl package)
+        k_values, theta_values, spectrum_grid = load_2d_spectrum_netcdf(spectrum_file)
+    else
+        # Default to CSV format
+        k_values, theta_values, spectrum_grid, detected_format = load_2d_spectrum_csv(spectrum_file)
+        @info "Loaded 2D spectrum from $spectrum_file (format: $detected_format)"
+    end
+    
+    # Check if normalization is requested - for 2D spectra, default to false
+    normalize = get(spectrum_params, "normalize_spectrum", false)
+    
+    # Add the normalization parameter to the spectrum_params
+    spectrum_params_with_norm = copy(spectrum_params)
+    spectrum_params_with_norm["normalize_spectrum"] = normalize
+    
+    # Process the 2D spectrum to obtain wave components
+    kx_rs, ky_rs, kvec_rs, tht_rs, amp_rs = process_2d_spectrum(
+        k_values, theta_values, spectrum_grid, Hs, spectrum_params_with_norm
+    )
+    
+    # Calculate frequencies based on water depth
+    if option[:option] == "deepwater"
+        omega_rs = sqrt.(g .* kvec_rs)
+    elseif option[:option] == "finitewater"
+        omega_rs = sqrt.(g .* kvec_rs .* tanh.(kvec_rs .* option[:h]))
+    end
+    
+    # Generate random phases
+    phase_rs = 2π * rand(length(kvec_rs))
+    
+    # Determine the k range for reporting
+    k_range = (minimum(k_values), maximum(k_values))
+    
+    return kx_rs, ky_rs, kvec_rs, tht_rs, omega_rs, amp_rs, phase_rs, "spectrum2d", k_range
 end
 
 """
@@ -308,19 +295,20 @@ function generate_jonswap_spectrum(option, kvec_rs, Hs, k_p, k_w, gamma=3.3, sig
 end
 
 """
-    load_custom_spectrum(filename, kvec_rs, Hs)
+    load_custom_spectrum(filename, kvec_rs, Hs; normalize=true)
 
 Load a custom spectrum from a file.
 
 # Arguments
 - `filename`: Path to the spectrum file
 - `kvec_rs`: Wave numbers
-- `Hs`: Significant wave height
+- `Hs`: Significant wave height (used only if normalize=true)
+- `normalize`: Whether to normalize the spectrum to match the specified Hs
 
 # Returns
 - Spectral density values
 """
-function load_custom_spectrum(filename, kvec_rs, Hs)
+function load_custom_spectrum(filename, kvec_rs, Hs; normalize=true)
     # Read custom spectrum from file
     # Format expected: CSV with two columns (wave number, spectral density)
     data = nothing
@@ -359,113 +347,24 @@ function load_custom_spectrum(filename, kvec_rs, Hs)
         end
     end
     
-    # Normalize to ensure correct significant wave height
-    scaling_factor = (Hs^2/16) / sum(Sk_vec * (kvec_rs[2] - kvec_rs[1]))
-    return Sk_vec .* scaling_factor
-end
-
-"""
-    Dalzell_2D_xyt_YanLi_probe(t, x, t0, option, kvec_rs, omega_rs, phase_rs, amp_rs)
-
-Calculate second-order wave components for 1D waves.
-
-# Arguments
-- `t`: Time
-- `x`: X-position
-- `t0`: Initial time
-- `option`: Dictionary with water depth options
-- `kvec_rs`: Wave numbers
-- `omega_rs`: Angular frequencies
-- `phase_rs`: Wave phases
-- `amp_rs`: Wave amplitudes
-
-# Returns
-- `zeta20`: Second-order difference frequency component
-- `zeta22`: Second-order sum frequency component
-- `zeta1`: First-order component
-"""
-function Dalzell_2D_xyt_YanLi_probe(t, x, t0, option, kvec_rs, omega_rs, phase_rs, amp_rs)
-    # Li & Li (pof, 2021) or Li (JFM, 2021) 
-    g = 9.81
-    h = option[:h]
-    
-    # Initialize values
-    amp_rs = amp_rs ./ 2
-    zeta22 = 0
-    zeta20 = 0
-    zeta1 = 0
-    psi1 = kvec_rs .* x .- omega_rs .* (t - t0) .+ phase_rs
-    
-    for iik in 1:length(kvec_rs)
-        # cos_tht = cos(tht_rs - tht_rs(iik))
-        cos_tht = 1
-        amp_12 = amp_rs .* amp_rs[iik]
-        
-        if option[:option] == "deepwater"
-            dem_mean = (omega_rs .- omega_rs[iik]).^2 .- g .* abs.(kvec_rs .- kvec_rs[iik])
-            dem_plus = (omega_rs .+ omega_rs[iik]).^2 .- g .* abs.(kvec_rs .+ kvec_rs[iik])
-            coeff_phi20 = omega_rs .* omega_rs[iik] .* (omega_rs .- omega_rs[iik]) .* (1 .+ cos_tht) ./ dem_mean
-            coeff_phi22 = -omega_rs .* omega_rs[iik] .* (omega_rs .+ omega_rs[iik]) .* (1 .- cos_tht) ./ dem_plus
-            
-            num_zeta20 = (omega_rs .- omega_rs[iik]).^2 .+ g .* abs.(kvec_rs .- kvec_rs[iik])
-            num_zeta22 = (omega_rs .+ omega_rs[iik]).^2 .+ g .* abs.(kvec_rs .+ kvec_rs[iik])
-            
-            Bm_1 = (omega_rs.^2 .+ omega_rs[iik]^2) ./ g ./ 2
-            coeff_zt20 = omega_rs .* omega_rs[iik] .* (1 .+ cos_tht) .* num_zeta20 ./ g ./ 2 ./ dem_mean .+ Bm_1
-            
-            coeff_zt22 = -omega_rs .* omega_rs[iik] .* (1 .- cos_tht) .* num_zeta22 ./ g ./ 2 ./ dem_plus .+ Bm_1
-            
-        elseif option[:option] == "finitewater"
-            k2iik = kvec_rs[iik]
-            
-            th_1 = tanh.(kvec_rs .* h)
-            th_2 = tanh(k2iik * h)
-            sh_1 = sinh.(kvec_rs .* h)
-            sh_2 = sinh(k2iik * h)
-            omega2iik = omega_rs[iik]
-            dem_20 = (omega_rs .- omega2iik).^2 .- g .* abs.(kvec_rs .- k2iik) .* tanh.((abs.(kvec_rs .- k2iik)) .* h)
-            dem_22 = (omega_rs .+ omega2iik).^2 .- g .* abs.(kvec_rs .+ k2iik) .* tanh.((abs.(kvec_rs .+ k2iik)) .* h)
-            
-            coeff_zt22 = (omega_rs.^2 .+ omega2iik^2) ./ 2 ./ g .- omega_rs .* omega2iik ./ 2 ./ g .*
-                (1 .- cos_tht ./ th_1 ./ th_2) .*
-                ((omega_rs .+ omega2iik).^2 .+ g .* abs.(kvec_rs .+ k2iik) .* tanh.(abs.(kvec_rs .+ k2iik) .* h)) ./
-                dem_22 .+ (omega_rs .+ omega2iik) ./ 2 ./ g ./ dem_22 .*
-                (omega_rs.^3 ./ sh_1.^2 .+ omega2iik^3 ./ sh_2^2)
-            
-            coeff_zt20 = (omega_rs.^2 .+ omega2iik^2) ./ 2 ./ g .+ omega_rs .* omega2iik ./ 2 ./ g .*
-                (1 .+ cos_tht ./ th_1 ./ th_2) .*
-                ((omega_rs .- omega2iik).^2 .+ g .* abs.(kvec_rs .- k2iik) .* tanh.(abs.(kvec_rs .- k2iik) .* h)) ./
-                dem_20 .+ (omega_rs .- omega2iik) ./ 2 ./ g ./ dem_20 .*
-                (omega_rs.^3 ./ sh_1.^2 .- omega2iik^3 ./ sh_2^2)
-        end
-        
-        # Handle NaN and Inf values
-        coeff_zt20[isnan.(coeff_zt20)] .= 0
-        coeff_zt20[isinf.(coeff_zt20)] .= 0
-        
-        coeff_zt22[isnan.(coeff_zt22)] .= 0
-        coeff_zt22[isinf.(coeff_zt22)] .= 0
-        
-        psi2 = psi1[iik]
-        cos_plus = cos.(psi1 .+ psi2)
-        cos_minus = cos.(psi1 .- psi2)
-        
-        zeta22 = sum(amp_12 .* coeff_zt22 .* cos_plus) + zeta22
-        zeta20 = sum(amp_12 .* coeff_zt20 .* cos_minus) + zeta20
-        zeta1 = amp_rs[iik] * cos(psi2) + zeta1
+    # Normalize the spectrum if requested
+    if normalize
+        # Normalize to ensure correct significant wave height
+        dk = kvec_rs[2] - kvec_rs[1]
+        scaling_factor = (Hs^2/16) / sum(Sk_vec * dk)
+        return Sk_vec .* scaling_factor
+    else
+        # Use the spectrum values directly
+        approx_Hs = 4 * sqrt(sum(Sk_vec * (kvec_rs[2] - kvec_rs[1])))
+        @info "Using custom spectrum without normalization. Approximate Hs = $approx_Hs"
+        return Sk_vec
     end
-    
-    zeta22 = 2 * zeta22
-    zeta20 = 2 * zeta20
-    zeta1 = 2 * zeta1
-    
-    return zeta20, zeta22, zeta1
 end
 
 """
     Dalzell_3D_xyt_YanLi_probe(t, x, y, t0, option, kx_rs, ky_rs, kvec_rs, tht_rs, omega_rs, phase_rs, amp_rs)
 
-Calculate second-order wave components for 2D waves with directional spreading.
+Calculate second-order wave components for 2D waves with directional spreading at a single point.
 
 # Arguments
 - `t`: Time
@@ -740,33 +639,8 @@ function exceedance_probability(zeta, prescribed_Hs)
     return Hs, Hs_m0, kurt, skew, exceed_prob, thresholds
 end
 
-# Main processing function for 1D wave simulations
-function batch_run_seeded_1d(seed, input, endtimeT_p)
-    # Random params
-    kvec_rs, omega_rs, amp_rs, phase_rs, spectrum_type, k_range = obtain_2dwaveSpectra_irregular(
-        input[:Hs], input[:eps_0], input[:k_p], input[:k_w], input[:option], 
-        input[:Nk], seed, input[:spectrum_params]
-    )
-    
-    # Initialize arrays
-    zeta_1_single_probe = zeros(endtimeT_p * input[:Ntp])
-    zeta_22_single_probe = zeros(endtimeT_p * input[:Ntp])
-    zeta_20_single_probe = zeros(endtimeT_p * input[:Ntp])
-    
-    # Process each time step
-    for kk in 1:(endtimeT_p * input[:Ntp])
-        zeta_20_single_probe[kk], zeta_22_single_probe[kk], zeta_1_single_probe[kk] = 
-            Dalzell_2D_xyt_YanLi_probe(
-                input[:time][kk], 0, input[:t0], input[:option], kvec_rs, omega_rs, 
-                phase_rs, amp_rs
-            )
-    end
-    
-    return zeta_22_single_probe, zeta_20_single_probe, zeta_1_single_probe, spectrum_type, k_range
-end
-
-# Main processing function for 2D wave simulations at a single probe location
-function batch_run_seeded_2d_probe(seed, input, endtimeT_p)
+# Main processing function for 2D wave simulation at a probe location
+function batch_run_seeded(seed, input, endtimeT_p)
     # Random params with directional spreading
     kx_rs, ky_rs, kvec_rs, tht_rs, omega_rs, amp_rs, phase_rs, spectrum_type, k_range = 
         obtain_directional_waveSpectra_irregular(
@@ -796,7 +670,7 @@ function batch_run_seeded_2d_probe(seed, input, endtimeT_p)
 end
 
 # Main processing function for 2D wave simulations over a grid (for a single time step)
-function batch_run_seeded_2d_grid(seed, input, time_step)
+function batch_run_grid(seed, input, time_step)
     # Random params with directional spreading
     kx_rs, ky_rs, kvec_rs, tht_rs, omega_rs, amp_rs, phase_rs, spectrum_type, k_range = 
         obtain_directional_waveSpectra_irregular(
@@ -812,18 +686,4 @@ function batch_run_seeded_2d_grid(seed, input, time_step)
     )
     
     return zeta20, zeta22, zeta1, spectrum_type, k_range
-end
-
-# Determine whether to run 1D or 2D simulation based on input parameters
-function batch_run_seeded(seed, input, endtimeT_p)
-    # Check if this is a 2D simulation (with directional spreading)
-    is_2d = haskey(input, :tht_w) && haskey(input, :Ntht)
-    
-    if is_2d
-        # 2D simulation at a probe location
-        return batch_run_seeded_2d_probe(seed, input, endtimeT_p)
-    else
-        # 1D simulation
-        return batch_run_seeded_1d(seed, input, endtimeT_p)
-    end
 end

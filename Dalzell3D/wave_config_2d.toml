@@ -1,69 +1,80 @@
-# Wave Simulation Configuration
+# 2D Wave Simulation Configuration
 
 [parameters]
 # Wave physical properties
-k_p = 2.91            # Peak wave number
-k_w = 0.12            # Wave number bandwidth (relative to k_p or absolute)
-k_w_relative = false  # If true, k_w = k_w * k_p
-Hs = 0.04             # Significant wave height
-kph = 0.79            # kph parameter
+Hs = 0.04             # Significant wave height (used only for normalization if requested)
+kph = 0.79            # kph parameter (water depth relative to peak wavelength)
 t0 = 0                # Initial time
 
-# Directional spreading parameters (2D only)
-is_directional = true   # Set to true for 2D simulation with directional spreading
-tht_w = 0.2            # Directional spreading parameter (radians)
-Ntht = 32              # Number of directions
+# Spectrum normalization
+normalize_spectrum = false  # When false, use spectrum values directly without scaling to match Hs
 
-# Probe location for 2D simulations
-x_probe = 0.0          # X-coordinate of probe location
-y_probe = 0.0          # Y-coordinate of probe location
+# Directional spreading parameters
+tht_w = 0.2           # Directional spreading parameter (radians)
+Ntht = 32             # Number of directions
 
-# Wave number range configuration
-kmin_factor = 4.0      # kmin = k_p - kmin_factor*k_w (unless < 0, then 0.1*k_p)
-kmax_factor = 4.0      # kmax = k_p + kmax_factor*k_w
-custom_kmin = 0.5      # If > 0, use this exact value for kmin instead of factor
-custom_kmax = 20.0     # If > 0, use this exact value for kmax instead of factor
+# Probe location (exact point where time series is generated)
+x_probe = 0.0         # X-coordinate of probe location
+y_probe = 0.0         # Y-coordinate of probe location
 
 # Spectrum configuration
-spectrum_type = "jonswap"  # Options: "gaussian", "jonswap", "custom"
+# Options:
+#  "gaussian"   : Gaussian spectrum with directional spreading
+#  "jonswap"    : JONSWAP spectrum with directional spreading
+#  "custom"     : 1D spectrum from file with directional spreading
+#  "spectrum2d" : Full 2D spectrum from file
+spectrum_type = "jonswap"
 
-# JONSWAP specific parameters (used only when spectrum_type = "jonswap")
+# These parameters are required when using spectrum_type = "gaussian", "jonswap", or "custom"
+# When using "spectrum2d", T_p must be specified if k_p is not
+k_p = 2.91            # Peak wave number
+k_w = 0.12            # Wave number bandwidth
+T_p = 0.98            # Peak wave period (optional if k_p is specified)
+
+# JONSWAP specific parameters (used when spectrum_type = "jonswap")
 gamma = 3.3                # Peak enhancement factor
 sigma_a = 0.07             # Left spectral width
 sigma_b = 0.09             # Right spectral width
 
-# Custom spectrum (used only when spectrum_type = "custom")
+# Custom 1D spectrum (used when spectrum_type = "custom")
 spectrum_file = "custom_spectrum.csv"  # Path to custom spectrum file
+
+# 2D Spectrum file configuration (used when spectrum_type = "spectrum2d")
+spectrum2d_file = "wavewatch_spectrum.csv"  # Path to 2D spectrum file
+spectrum2d_format = "csv"  # Format: "csv", "netcdf", or "auto"
+
+# Wave number range configuration (used for non-file spectra)
+kmin_factor = 4.0      # kmin = k_p - kmin_factor*k_w (unless < 0, then 0.1*k_p)
+kmax_factor = 4.0      # kmax = k_p + kmax_factor*k_w
+custom_kmin = -1.0     # If > 0, use this exact value for kmin instead of factor
+custom_kmax = -1.0     # If > 0, use this exact value for kmax instead of factor
 
 # Simulation parameters
 Ntp = 128            # Number of points in a period
-Nperiod = 2400       # Time scale for periods
-Nxperiod = 60        # Number of periods in space
-ppp = 32             # Points per wavelength
+Nperiod = 2400       # Total number of periods for the simulation
+Nxperiod = 60        # Number of periods in space (x-direction)
+Nyperiod = 60        # Number of periods in space (y-direction)
+ppp = 32             # Points per wavelength (x-direction)
+ppp_y = 32           # Points per wavelength (y-direction)
 Nk = 128             # Number of wave components
 water_type = "finitewater"  # "deepwater" or "finitewater"
-
-# 2D grid parameters (used only when is_directional = true for grid simulations)
-# No y parameters means use the same values as x-direction
-Nyperiod = 60        # Number of periods in y-direction
-ppp_y = 32           # Points per wavelength in y-direction
 
 [simulation]
 # Simulation control
 N_test = 50            # Number of simulations to run
 seed_max = 500         # Maximum seed number to sample from
 use_parallel = true    # Whether to use parallel processing
-num_workers = 0        # Number of worker processes (0 = auto-detect)
+num_workers = 0        # Number of worker processes (0 = auto-detect based on CPU count)
 simulation_type = "probe"  # "probe" for time series at a point, "grid" for spatial field
 
-# Grid simulation parameters
-grid_time_steps = [100, 200, 300]  # Time steps to calculate grid for (only for grid simulation)
+# Grid simulation parameters (used only when simulation_type = "grid")
+grid_time_steps = [100, 200, 300]  # Time steps to calculate grid for
 save_total_only = false  # If true, only save zeta_total for grid simulations to save memory
 
 [output]
 # Output configuration
 filename = "wave_batch_results_2d.jld2"  # Output filename
-directory = "results_2d"                  # Output directory for plots
+directory = "results_2d"                 # Output directory for plots
 
 [plot]
 # Plot configuration

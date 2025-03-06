@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-# First, load required packages on main process
+# Load required packages
 using Distributed
 using Statistics
 using Random
@@ -12,7 +12,7 @@ using ArgParse
 
 # Parse command line arguments 
 function parse_commandline()
-    s = ArgParseSettings(description="Run wave simulation with support for 1D and 2D simulations")
+    s = ArgParseSettings(description="Run 2D wave simulation with directional spreading")
     @add_arg_table! s begin
         "--config", "-c"
             help = "Path to configuration file"
@@ -79,6 +79,15 @@ function load_config(config_file)
     spectrum_params = Dict{String, Any}()
     spectrum_params["spectrum_type"] = get(config["parameters"], "spectrum_type", "gaussian")
     
+    # Get normalize_spectrum parameter
+    spectrum_params["normalize_spectrum"] = get(config["parameters"], "normalize_spectrum", true)
+    
+    # Handle 2D spectrum file if specified
+    if spectrum_params["spectrum_type"] == "spectrum2d"
+        spectrum_params["spectrum2d_file"] = get(config["parameters"], "spectrum2d_file", "")
+        spectrum_params["spectrum2d_format"] = get(config["parameters"], "spectrum2d_format", "auto")
+    end
+    
     # Get spectrum-specific parameters
     if spectrum_params["spectrum_type"] == "jonswap"
         spectrum_params["gamma"] = get(config["parameters"], "gamma", 3.3)
@@ -103,14 +112,40 @@ function load_config(config_file)
     end
     
     # Calculate derived parameters
-    input[:eps_0] = input[:k_p] * input[:Hs] / 2  # steepness
-    input[:h] = input[:kph] / input[:k_p]
+    input[:eps_0] = get(input, :k_p, 0.0) * input[:Hs] / 2  # steepness (only if k_p is defined)
+    input[:h] = input[:kph] / get(input, :k_p, 1.0)  # Use k_p if defined, otherwise default to 1.0
     input[:g] = 9.81
-    input[:omega_p] = sqrt(input[:g] * input[:k_p] * tanh(input[:kph]))
-    input[:f_p] = input[:omega_p] / (2 * π)
-    input[:T_p] = 1 / input[:f_p]
-    input[:lambda_p] = 2 * π / input[:k_p]
-    input[:cg_p] = input[:omega_p] / input[:k_p] / 2 * (1 + 2 * input[:kph] / sinh(2 * input[:kph]))
+    
+    # Calculate wave parameters if k_p is available (not needed for 2D spectrum files)
+    if haskey(input, :k_p)
+        input[:omega_p] = sqrt(input[:g] * input[:k_p] * tanh(input[:kph]))
+        input[:f_p] = input[:omega_p] / (2 * π)
+        input[:T_p] = 1 / input[:f_p]
+        input[:lambda_p] = 2 * π / input[:k_p]
+        input[:cg_p] = input[:omega_p] / input[:k_p] / 2 * (1 + 2 * input[:kph] / sinh(2 * input[:kph]))
+    else
+        # For 2D spectrum files, require T_p to be specified directly
+        if !haskey(input, :T_p)
+            error("When using a 2D spectrum file without k_p, you must specify T_p directly")
+        end
+        input[:f_p] = 1 / input[:T_p]
+        # Derive lambda_p from water depth and period if needed
+        if !haskey(input, :lambda_p)
+            # Estimate k_p from the dispersion relation
+            k_est = 0.0
+            if input[:option] == "deepwater"
+                k_est = (2 * π * input[:f_p])^2 / input[:g]
+            else
+                # Iterate to find k_p from the dispersion relation
+                omega_p = 2 * π * input[:f_p]
+                k_est = omega_p^2 / input[:g]  # Initial deepwater estimate
+                for _ in 1:10  # Few iterations should converge
+                    k_est = omega_p^2 / (input[:g] * tanh(k_est * input[:h]))
+                end
+            end
+            input[:lambda_p] = 2 * π / k_est
+        end
+    end
     
     input[:dt] = input[:T_p] / input[:Ntp]  # time step determined from peak period
     input[:time] = (0:(input[:Nperiod] * input[:Ntp] - 1)) .* input[:dt] .+ input[:t0]
@@ -122,17 +157,21 @@ function load_config(config_file)
     input[:dx] = input[:Lx] / input[:Nx]
     input[:x] = (0:(input[:Nx] - 1)) .* input[:dx] .- input[:Lx] / 2
     
-    # Y-direction spatial grid (for 2D simulations)
-    if haskey(input, :is_directional) && input[:is_directional]
-        # If no y-parameters specified, use the same as x-direction
-        nyperiod = haskey(input, :Nyperiod) ? input[:Nyperiod] : input[:Nxperiod]
-        ppp_y = haskey(input, :ppp_y) ? input[:ppp_y] : input[:ppp]
-        
-        input[:Ny] = ppp_y * nyperiod # points per period
-        input[:Ly] = nyperiod * input[:lambda_p] # spatial range for periods
-        input[:dy] = input[:Ly] / input[:Ny]
-        input[:y] = (0:(input[:Ny] - 1)) .* input[:dy] .- input[:Ly] / 2
-    end
+    # Y-direction spatial grid
+    nyperiod = haskey(input, :Nyperiod) ? input[:Nyperiod] : input[:Nxperiod]
+    ppp_y = haskey(input, :ppp_y) ? input[:ppp_y] : input[:ppp]
+    
+    input[:Ny] = ppp_y * nyperiod # points per period
+    input[:Ly] = nyperiod * input[:lambda_p] # spatial range for periods
+    input[:dy] = input[:Ly] / input[:Ny]
+    input[:y] = (0:(input[:Ny] - 1)) .* input[:dy] .- input[:Ly] / 2
+    
+    # We always use directional spreading in this simplified version
+    input[:is_directional] = true
+    
+    # Ensure probe positions are included
+    input[:x_probe] = get(config["parameters"], "x_probe", 0.0)
+    input[:y_probe] = get(config["parameters"], "y_probe", 0.0)
     
     # Use a Dictionary for option
     input[:option] = Dict(:option => config["parameters"]["water_type"], :h => input[:h])
@@ -220,7 +259,7 @@ function run_simulation(config_file)
         for time_step in grid_time_steps
             @info "Processing time step $time_step for simulation $i"
             zeta_20, zeta_22, zeta_1, spectrum_type, k_range = 
-                batch_run_seeded_2d_grid(seed_values[i], input, time_step)
+                batch_run_grid(seed_values[i], input, time_step)
             
             # Calculate total elevation
             zeta_total = zeta_20 + zeta_22 + zeta_1
@@ -288,38 +327,39 @@ function run_simulation(config_file)
     
     # Add simulation parameters to the batch
     batch[:parameters] = Dict(
-        :k_p => input[:k_p],
-        :k_w => input[:k_w],
         :Hs => input[:Hs],
-        :eps_0 => input[:eps_0],
         :h => input[:h],
         :T_p => input[:T_p],
         :Nperiod => input[:Nperiod],
         :option => input[:option][:option],
         :Nk => input[:Nk],
+        :Ntht => input[:Ntht],
+        :tht_w => input[:tht_w], 
         :N_test => N_test,
         :spectrum_type => input[:spectrum_params]["spectrum_type"],
-        :simulation_type => simulation_type
+        :simulation_type => simulation_type,
+        :is_directional => true
     )
     
-    # Add directional parameters if applicable
-    if haskey(input, :is_directional) && input[:is_directional]
-        batch[:parameters][:is_directional] = true
-        batch[:parameters][:tht_w] = input[:tht_w]
-        batch[:parameters][:Ntht] = input[:Ntht]
+    # Add k_p if it exists
+    if haskey(input, :k_p)
+        batch[:parameters][:k_p] = input[:k_p]
+        batch[:parameters][:k_w] = input[:k_w]
+        batch[:parameters][:eps_0] = input[:eps_0]
     end
     
     # Add spatial grid information
     batch[:parameters][:x] = input[:x]
-    if haskey(input, :y)
-        batch[:parameters][:y] = input[:y]
-    end
+    batch[:parameters][:y] = input[:y]
+    batch[:parameters][:x_probe] = input[:x_probe]
+    batch[:parameters][:y_probe] = input[:y_probe]
     
     # Add wave number range parameters
     batch[:parameters][:kmin_factor] = get(input[:spectrum_params], "kmin_factor", 4.0)
     batch[:parameters][:kmax_factor] = get(input[:spectrum_params], "kmax_factor", 4.0) 
     batch[:parameters][:custom_kmin] = get(input[:spectrum_params], "custom_kmin", -1.0)
     batch[:parameters][:custom_kmax] = get(input[:spectrum_params], "custom_kmax", -1.0)
+    batch[:parameters][:normalize_spectrum] = get(input[:spectrum_params], "normalize_spectrum", false)
     
     if length(batch[:k_range]) > 0
         batch[:parameters][:actual_kmin] = batch[:k_range][1][1]
@@ -333,6 +373,8 @@ function run_simulation(config_file)
         batch[:parameters][:sigma_b] = input[:spectrum_params]["sigma_b"]
     elseif input[:spectrum_params]["spectrum_type"] == "custom"
         batch[:parameters][:spectrum_file] = input[:spectrum_params]["spectrum_file"]
+    elseif input[:spectrum_params]["spectrum_type"] == "spectrum2d"
+        batch[:parameters][:spectrum2d_file] = input[:spectrum_params]["spectrum2d_file"]
     end
     
     # Save results
@@ -343,6 +385,7 @@ function run_simulation(config_file)
     # Return for potential further processing
     return batch, input
 end
+
 # Main function
 function main()
     if args["plot-only"]
@@ -352,7 +395,7 @@ function main()
         WavePlot.generate_plots(batch, args["config"])
     else
         # Run the simulation
-        println("Running wave simulation using config file: $(args["config"])")
+        println("Running 2D wave simulation using config file: $(args["config"])")
         
         # Run the simulation
         batch, input = run_simulation(args["config"])
