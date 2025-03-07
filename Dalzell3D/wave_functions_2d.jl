@@ -4,11 +4,10 @@ using Random
 using FFTW
 using DelimitedFiles
 using LinearAlgebra
-
+using NetCDF
 # Functions for loading and processing 2D wave spectra are now integrated directly
 
 function load_2d_spectrum_netcdf(filename)
-    using NetCDF
     
     # Open the NetCDF file
     nc = NetCDF.open(filename)
