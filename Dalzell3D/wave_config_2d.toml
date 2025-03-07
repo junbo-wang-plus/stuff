@@ -50,13 +50,13 @@ custom_kmin = -1.0     # If > 0, use this exact value for kmin instead of factor
 custom_kmax = -1.0     # If > 0, use this exact value for kmax instead of factor
 
 # Simulation parameters
-Ntp = 128            # Number of points in a period
+Ntp = 8            # Number of points in a period
 Nperiod = 2400       # Total number of periods for the simulation
 Nxperiod = 60        # Number of periods in space (x-direction)
 Nyperiod = 60        # Number of periods in space (y-direction)
 ppp = 32             # Points per wavelength (x-direction)
 ppp_y = 32           # Points per wavelength (y-direction)
-Nk = 128             # Number of wave components
+Nk = 32             # Number of wave components
 water_type = "finitewater"  # "deepwater" or "finitewater"
 
 [simulation]
