@@ -3,8 +3,8 @@
 [parameters]
 # Wave physical properties
 k_p = 2.91            # Peak wave number
-k_w = 0.12            # Wave number bandwidth (relative to k_p or absolute)
-k_w_relative = false  # If true, k_w = k_w * k_p
+k_w = 0.03            # Wave number bandwidth (relative to k_p or absolute)
+k_w_relative = true  # If true, k_w = k_w * k_p
 Hs = 0.04             # Significant wave height
 kph = 0.79            # kph parameter
 t0 = 0                # Initial time
@@ -12,11 +12,11 @@ t0 = 0                # Initial time
 # Wave number range configuration
 kmin_factor = 4.0      # kmin = k_p - kmin_factor*k_w (unless < 0, then 0.1*k_p)
 kmax_factor = 4.0      # kmax = k_p + kmax_factor*k_w
-custom_kmin = 0.5     # If > 0, use this exact value for kmin instead of factor
-custom_kmax = 20.0     # If > 0, use this exact value for kmax instead of factor
+custom_kmin = -1.0     # If > 0, use this exact value for kmin instead of factor
+custom_kmax = -1.0     # If > 0, use this exact value for kmax instead of factor
 
 # Spectrum configuration
-spectrum_type = "jonswap"  # Options: "gaussian", "jonswap", "custom"
+spectrum_type = "gaussian"  # Options: "gaussian", "jonswap", "custom"
 
 # JONSWAP specific parameters (used only when spectrum_type = "jonswap")
 gamma = 3.3                # Peak enhancement factor
@@ -39,12 +39,12 @@ water_type = "finitewater"  # "deepwater" or "finitewater"
 N_test = 105           # Number of simulations to run
 seed_max = 500        # Maximum seed number to sample from
 use_parallel = true   # Whether to use parallel processing
-num_workers = 0       # Number of worker processes (0 = auto-detect)
+num_workers = 15       # Number of worker processes (0 = auto-detect)
 
 [output]
 # Output configuration
-filename = "wave_batch_results_jonswap_shallow.jld2"  # Output filename
-directory = "results_jonswap_shallow"                 # Output directory for plots
+filename = "wave_batch_results_gaussian_shallow.jld2"  # Output filename
+directory = "results_gaussian_shallow"                 # Output directory for plots
 
 [plot]
 # Plot configuration
