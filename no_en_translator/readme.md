@@ -1,3 +1,8 @@
+## Download
+```
+https://podcasttomp3.com/
+```
+
 ## Usage
 ```
 python translator.py input.txt cpu  # Force CPU
