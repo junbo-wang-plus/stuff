@@ -19,10 +19,20 @@ pip install opendrift xarray matplotlib cartopy netcdf4 copernicusmarine ecmwf-o
 ### Required Datasets
 **Pre-download manually:**
 - GEBCO bathymetry data from [GEBCO](https://www.gebco.net/) → `GEBCO_2024.nc`
+  - Latest: GEBCO_2024 Grid (published July 2024)
+  - Global 15 arc-second resolution (~450m spacing)
 
 **Downloaded by scripts:**
-- CMEMS ocean data (requires registration)
-- ECMWF wind forecasts (free)
+- **CMEMS ocean data** (requires free registration at [marine.copernicus.eu](https://marine.copernicus.eu))
+  - Sign Service Level Agreement for full access
+  - Forecast range: **10 days** (240 hours)
+  - Update frequency: Twice daily at 00:00/12:00 UTC
+  - Archive: 2-year rolling archive available
+- **ECMWF wind forecasts** (free, no registration)
+  - HRES: **10 days** deterministic forecast
+  - ENS: **15 days** ensemble forecast  
+  - Update frequency: Every 6-12 hours (00Z, 06Z, 12Z, 18Z)
+  - Open data: 0.25° resolution, 3-hourly, CC-BY-4.0 license
 
 ## Part 1: OpenDrift Trajectory Calculations
 
@@ -30,10 +40,13 @@ pip install opendrift xarray matplotlib cartopy netcdf4 copernicusmarine ecmwf-o
 Download required datasets from CMEMS and ECMWF:
 
 ```bash
+# Set CMEMS credentials (required)
+# Update username/password in download scripts before running
+
 # Ocean currents, tides, and waves (CMEMS)
 python download.py  # → currents_tides.nc, waves.nc
 
-# Wind data (ECMWF)
+# Wind data (ECMWF - no credentials needed)
 python download_wind.py  # → wind.grib2
 python ecmwf_convert.py  # → wind.nc
 
@@ -41,11 +54,17 @@ python ecmwf_convert.py  # → wind.nc
 python download_temp.py  # → sst_forecast.nc
 ```
 
+**Note:** CMEMS has a 2GB limit per download request. For larger datasets, split into multiple time periods.
+
 **Datasets used:**
 - `cmems_mod_glo_phy_anfc_merged-uv_PT1H-i` - Ocean currents and tides (uo, vo, utide, vtide)
-- `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` - Wave data (VHM0, VMDR, VTPK, VSDX, VSDY)
+  - Resolution: 1/12° (~8km), hourly
+- `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` - Wave data (VHM0, VMDR, VTPK, VSDX, VSDY)  
+  - Resolution: 1/12° (~8km), 3-hourly
 - `cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m` - Sea surface temperature (thetao)
+  - Resolution: 1/12° (~8km), daily
 - ECMWF wind forecasts (u10, v10 → eastward_wind, northward_wind)
+  - Resolution: 0.25° (~25km), 3-hourly
 
 ### Run Trajectories
 ```bash
@@ -117,7 +136,9 @@ python gebco_gradient_viz.py GEBCO_2024.nc [region] [--simple]
 - `utide/vtide` - Tidal velocity components (m/s)
 
 ### GEBCO Bathymetry
-- `elevation` - Elevation/depth values (m, negative = ocean depth)
+- `elevation` - Elevation/depth values (m, negative = ocean depth, positive = land elevation)
+- Uses WGS84 coordinate system, pixel-center registered
+- Type Identifier (TID) grid available showing data source quality
 
 ## Region Configuration
 Default study area: North Atlantic
@@ -129,5 +150,9 @@ Edit region bounds in download scripts as needed.
 ## Notes
 - CMEMS requires registration and credentials
 - ECMWF data is freely available
-- Wave analysis computes shallow/intermediate/deep water wave regimes based on kh values
+- Wave analysis computes shallow/intermediate/deep water wave regimes based on kh values:
+  - Shallow water: kh < π/10 (~0.31)
+  - Intermediate water: π/10 < kh < π (~3.14)  
+  - Deep water: kh > π
 - Trajectory comparisons show effects of waves, tides, and wind forcing
+- All data uses WGS84 coordinate system
