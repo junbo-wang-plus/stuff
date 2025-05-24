@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""
-Targeted converter for ECMWF GRIB2 wind data with time+step structure
-"""
 import xarray as xr
 import numpy as np
 import pandas as pd
 
 def convert_ecmwf_wind():
-    print("Converting ECMWF wind.grib2 to wind.nc...")
     
-    # Open the GRIB file
     ds = xr.open_dataset('wind.grib2', engine='cfgrib')
     
     print(f"Original variables: {list(ds.data_vars)}")
@@ -17,7 +12,6 @@ def convert_ecmwf_wind():
     print(f"Time: {ds.time.values}")
     print(f"Steps: {len(ds.step)} forecast steps")
     
-    # Convert the time+step structure to proper time series
     base_time = pd.to_datetime(ds.time.values)
     steps = pd.to_timedelta(ds.step.values)
     
@@ -82,7 +76,6 @@ def convert_ecmwf_wind():
     print("Your wind data now has:")
     print(f"  - {len(valid_times)} time steps (3-hourly for 10 days)")
     print("  - eastward_wind and northward_wind variables")
-    print("  - Ready for OpenDrift!")
 
 if __name__ == "__main__":
     convert_ecmwf_wind()
