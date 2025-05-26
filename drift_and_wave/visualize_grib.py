@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minimal GRIB2 wind visualization script.
+Minimal GRIB2 wind visualization script with proper date display.
 Outputs: variable info, static image, and video.
 """
 
@@ -11,9 +11,17 @@ import numpy as np
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.animation as animation
+import pandas as pd
 
 # Fixed region coordinates
 REGION = [-55.0, -15.0, 35.0, 65.0]  # [lon_min, lon_max, lat_min, lat_max]
+
+def get_valid_times(ds):
+    """Calculate actual valid times from base time and forecast steps."""
+    base_time = pd.to_datetime(ds.time.values)
+    steps = pd.to_timedelta(ds.step.values)
+    valid_times = [base_time + step for step in steps]
+    return valid_times
 
 def print_variables(filename):
     """Print basic variable information."""
@@ -27,12 +35,14 @@ def print_variables(filename):
             print(f"    {var.long_name}")
     
     if 'step' in ds.dims:
-        print(f"Forecast steps: {len(ds.step)} ({ds.step.values[0]} to {ds.step.values[-1]})")
+        valid_times = get_valid_times(ds)
+        print(f"Forecast steps: {len(ds.step)} ({valid_times[0]} to {valid_times[-1]})")
     ds.close()
 
 def create_static_plot(filename, use_region=True, output_file='wind.png'):
     """Create static wind plot."""
     ds = xr.open_dataset(filename, engine='cfgrib')
+    valid_times = get_valid_times(ds)
     
     # Get wind components
     u, v = ds['u10'].isel(step=0), ds['v10'].isel(step=0)
@@ -63,7 +73,8 @@ def create_static_plot(filename, use_region=True, output_file='wind.png'):
     if use_region:
         ax.set_extent(REGION, ccrs.PlateCarree())
     
-    ax.set_title(f'ECMWF 10m Wind - Step {ds.step.values[0]}')
+    # Use actual date instead of step
+    ax.set_title(f'ECMWF 10m Wind - {valid_times[0].strftime("%Y-%m-%d %H:%M UTC")}')
     ax.gridlines(draw_labels=True, alpha=0.3)
     
     plt.tight_layout()
@@ -75,6 +86,7 @@ def create_static_plot(filename, use_region=True, output_file='wind.png'):
 def create_video(filename, use_region=True, output_file='wind_video.mp4'):
     """Create wind animation video."""
     ds = xr.open_dataset(filename, engine='cfgrib')
+    valid_times = get_valid_times(ds)
     
     # Get wind components for all steps
     u_all, v_all = ds['u10'], ds['v10']
@@ -116,7 +128,8 @@ def create_video(filename, use_region=True, output_file='wind_video.mp4'):
         if use_region:
             ax.set_extent(REGION, ccrs.PlateCarree())
         
-        ax.set_title(f'ECMWF 10m Wind - Step {ds.step.values[step]}')
+        # Use actual date instead of step
+        ax.set_title(f'ECMWF 10m Wind - {valid_times[step].strftime("%Y-%m-%d %H:%M UTC")}')
         ax.gridlines(draw_labels=True, alpha=0.3)
         
         return [ax]
