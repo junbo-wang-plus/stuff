@@ -10,8 +10,8 @@ max_lon = -15.0  # East boundary
 min_lat = 35.0   # South boundary  
 max_lat = 65.0   # North boundary
 
-start_date = "2025-05-23T00:00:00"
-end_date = "2025-06-01T00:00:00"  # ~9 days forecast (within 10-day limit)
+start_date = "2025-05-26T00:00:00"
+end_date = "2025-06-05T00:00:00"  # ~9 days forecast (within 10-day limit)
 
 
 copernicusmarine.subset(
