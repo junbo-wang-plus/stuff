@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 
 copernicusmarine.login(username="junbo.wang@uib.no", password="GPW5w*roLs@0M^")
 
-start_date = "2025-05-23T00:00:00"
-end_date = "2025-06-01T00:00:00"
+start_date = "2025-05-26T00:00:00"
+end_date = "2025-06-05T00:00:00"
 
 min_lon = -55.0
 max_lon = -15.0

@@ -1,6 +1,7 @@
 # Add to .gitignore
 *.grib2
 *.nc
+*.idx
 *.mp4
 Dalzell2D/wave_batch_results_deep.jld2
 Dalzell2D/wave_batch_results_shallow.jld2
